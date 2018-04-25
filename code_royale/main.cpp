@@ -59,6 +59,56 @@ public:
   bool is_mine() { return owner() == 0;}
 };
 
+
+class Building {
+public:
+  Building(int const& type, int const& owner, int const& param1, int const& param2)
+    :_owner{owner}, _param1{param1}, _param2{param2}
+  {}
+
+  // Getters and Setters
+  int get_param1() {return _param1;}
+  void set_param1(int const& p) { _param1 = p;}
+
+  int get_param2() {return _param2;}
+  void set_param2(int const& p) { _param1 = p;}
+
+  // Issers and Hassers
+  bool is_mine() {return _owner == 0;}
+
+  bool is_knight() {return _param2 == 0;}
+  bool is_archer() {return _param2 == 1;}
+  bool is_giant() {return _param2 == 2;}
+
+private:
+  int _owner;
+  int _param1;
+  int _param2;
+};
+
+class Mine : Building{
+public:
+  Mine(int const& type, int const& owner, int const& param1, int const& param2)
+    :Mine(type, owner, param1, param2)
+  {}
+
+  int get_gold_left() {return get_param1();};
+  int get_mine_size() {return get_param2();};
+
+};
+
+class Barrack : Building{
+public:
+  Barrack(int const& type, int const& owner, int const& param1, int const& param2)
+    :Barrack(type, owner, param1, param2)
+  {}
+
+  int get_gold_left() {return get_param1();};
+  int get_mine_size() {return get_param2();};
+
+};
+
+
 class Site {
 public:
   Site(int const& id, int const& x, int const& y, int const& radius)
@@ -88,17 +138,7 @@ public:
   int const& type() const {return _type;}
 
   // Issers and Hassers
-  bool is_mine() {return _owner == 0;}
-
-  bool is_free() {return _type == -1;}
-  bool is_a_mine() {return _type == 0;}
-  bool is_tower() {return _type == 1;}
-  bool is_barrack() {return _type == 2;}
-
-  bool is_knight() {return _param2 == 0;}
-  bool is_archer() {return _param2 == 1;}
-  bool is_giant() {return _param2 == 2;}
-  bool is_training() {return _param1 > 0;}
+  bool is_free() {return _building == nullptr;}
 
   // Others
   string const stringify() const {
@@ -112,13 +152,11 @@ private:
   int _x;
   int _y;
   int _radius;
-  // Second part
+  // Updates
   int _gold;
   int _mine_size;
-  int _type;
-  int _owner;
-  int _param1;
-  int _param2;
+  Building* _building;
+
 };
 
 class World {
