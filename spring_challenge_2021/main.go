@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -33,6 +34,7 @@ func (a actionType) String() string {
 type action struct {
 	action                           actionType
 	targetCellIndex, originCellIndex int
+	debugMessage                     string
 }
 
 func parseActionString(actionString string) (a action) {
@@ -42,10 +44,14 @@ func parseActionString(actionString string) (a action) {
 		a.action = wait
 	case seed.String():
 		a.action = seed
+		a.originCellIndex, _ = strconv.Atoi(s[1])
+		a.targetCellIndex, _ = strconv.Atoi(s[2])
 	case grow.String():
 		a.action = grow
+		a.targetCellIndex, _ = strconv.Atoi(s[1])
 	case complete.String():
 		a.action = complete
+		a.targetCellIndex, _ = strconv.Atoi(s[1])
 	default:
 		panic("Not a valid actionType")
 	}
@@ -72,8 +78,39 @@ type game struct {
 	possActions                                      []action
 }
 
-func (g game) nextAction() action {
+func (g *game) removeActionAt(i int) {
+	g.possActions[i] = g.possActions[len(g.possActions)-1]
+	g.possActions[len(g.possActions)-1] = action{}
+	g.possActions = g.possActions[:len(g.possActions)-1]
+}
+
+func (g *game) clear() {
+	g.trees = nil
+	g.possActions = nil
+}
+
+func (g *game) nextAction() action {
+	g.printPossActions()
+	for _, pa := range g.possActions {
+		if pa.action == complete && len(g.trees) > 1 {
+			fmt.Fprintln(os.Stderr, fmt.Sprintf("Comp: %v", pa))
+			return pa
+		} else if pa.action == grow && len(g.trees) > 3 {
+			fmt.Fprintln(os.Stderr, fmt.Sprintf("Grow: %v", pa))
+			return pa
+		} else if pa.action == seed {
+			fmt.Fprintln(os.Stderr, fmt.Sprintf("Seed: %v", pa))
+			return pa
+		}
+	}
+	g.possActions[0].debugMessage = "Took first Action"
 	return g.possActions[0]
+}
+
+func (g *game) printPossActions() {
+	for _, pa := range g.possActions {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("%v", pa))
+	}
 }
 
 func main() {
@@ -102,6 +139,7 @@ func main() {
 		g.board = append(g.board, newCell)
 	}
 	for {
+		g.clear()
 		// day: the game lasts 24 days: 0-23
 		var day int
 		scanner.Scan()
@@ -173,7 +211,11 @@ func main() {
 		}
 
 		// fmt.Fprintln(os.Stderr, "Debug messages...")
+		if na := g.nextAction(); na.debugMessage == "" {
+			fmt.Println(na.String() + " " + na.debugMessage)
+		} else {
+			fmt.Println(na.String())
+		}
 
-		fmt.Println(g.nextAction().String())
 	}
 }
