@@ -53,37 +53,37 @@ import (
 	"strings"
 )
 
+// fmt.Fprintln(os.Stderr, "Debug messages...")
+
+/*
+	--------------- cell
+*/
+
 type cell struct {
 	index, richness int
 	neighbours      []int
 }
 
+/*
+	--------------- tree
+*/
+
 type tree struct {
-	index, size       int
-	isMine, isDormant bool
+	index, size               int
+	isMine, isDormant, isSeed bool
 }
 
-func (g *game) getCellAt(index int) (bool, cell) {
-	for _, c := range g.board {
-		if c.index == index {
-			return true, c
-		}
-	}
-	return false, cell{}
+/*
+	--------------- shadow
+*/
+
+type shadow struct {
+	index, originIndex, size, direction int
 }
 
-func (g *game) getTreeAt(index int) (bool, tree) {
-	for _, t := range g.trees {
-		if t.index == index {
-			return true, t
-		}
-	}
-	return false, tree{}
-}
-
-func (t tree) isSeed() bool {
-	return t.size == 0
-}
+/*
+	--------------- action
+*/
 
 type actionType int
 
@@ -137,131 +137,156 @@ func (a action) String() string {
 	}
 }
 
+/*
+	--------------- game
+*/
 type game struct {
 	day, nutrients, mySun, myScore, oppSun, oppScore int
 	oppIsWaiting                                     bool
-	board                                            []cell
-	trees                                            []tree
-	possActions                                      []action
+	cells                                            map[int]cell
+	shadows                                          map[int][]shadow
+	trees                                            map[int]tree
+	possActions                                      map[actionType][]action
+	costs                                            map[int]int
 }
+
+/*
+	----- utils
+*/
 
 func (g *game) clear() {
-	g.trees = nil
-	g.possActions = nil
-}
-
-func (g *game) sunCost() map[int]int {
-	costs := map[int]int{}
-	for _, t := range g.trees {
-		costs[t.size] += 1
-	}
-	return costs
-}
-
-func (g *game) getComplete() (bool, action) {
-	for _, pa := range g.possActions {
-		if pa.action == complete {
-			return true, pa
-		}
-	}
-	return false, action{}
-}
-
-func (g *game) getGrow() (bool, action) {
-	grows := []action{}
-	for _, pa := range g.possActions {
-		if pa.action == grow {
-			grows = append(grows, pa)
-		}
-	}
-
-	// grow the most expensive one
-	costs := g.sunCost()
-	k := 0
-	v := 0
-	for kk, vv := range costs {
-		if vv > v {
-			k = kk
-			v = vv
-		}
-	}
-	for _, pa := range grows {
-		if ok, t := g.getTreeAt(pa.targetCellIndex); ok && t.size == k {
-			return true, pa
-		}
-	}
-
-	return false, action{}
-}
-
-func (g *game) getSeed() (bool, action) {
-	seeds := []action{}
-	for _, pa := range g.possActions {
-		if pa.action == seed {
-			seeds = append(seeds, pa)
-		}
-	}
-
-	// find out which seed has the most potential with nutrients
-	pa := action{}
-	bestNutrients := -1
-	for _, s := range seeds {
-		_, c := g.getCellAt(s.targetCellIndex)
-		if c.richness > bestNutrients {
-			bestNutrients = c.richness
-			pa = s
-		}
-	}
-	if bestNutrients != -1 {
-		return true, pa
-	}
-
-	return false, action{}
-}
-
-func (g *game) defaultAction() action {
-	return action{action: wait, debugMessage: "Default Action"}
-}
-
-func (g *game) numberOfSeeds() (seeds int) {
-	for _, t := range g.trees {
-		if t.isSeed() {
-			seeds++
-		}
-	}
-	return
-}
-
-func (g *game) myTrees() (trees []tree) {
-	for _, t := range g.trees {
-		if t.isMine {
-			trees = append(trees, t)
-		}
-	}
-	return
-}
-
-func (g *game) nextAction() action {
-	g.printPossActions()
-	ok, pa := g.getGrow()
-	if ok && g.day < 20 {
-		return pa
-	}
-	ok, complete := g.getComplete()
-	if ok && len(g.myTrees()) > 3 || ok && g.day > 19 {
-		return complete
-	}
-	ok, seed := g.getSeed()
-	if ok && g.numberOfSeeds() < 1 {
-		return seed
-	}
-	return g.defaultAction()
+	g.trees = make(map[int]tree)
+	g.possActions = make(map[actionType][]action)
+	g.shadows = make(map[int][]shadow)
 }
 
 func (g *game) printPossActions() {
 	for _, pa := range g.possActions {
 		fmt.Fprintf(os.Stderr, fmt.Sprintf("%v\n", pa))
 	}
+}
+
+func (g *game) printShadows() {
+	for _, sh := range g.shadows {
+		fmt.Fprintf(os.Stderr, fmt.Sprintf("%v\n", sh))
+	}
+}
+
+/*
+	----- getters
+*/
+
+func (g *game) getSunDirection() int {
+	return g.day % 6
+}
+
+func (g *game) getCellAt(index int) cell {
+	return g.cells[index]
+}
+
+func (g *game) getTreeAt(index int) tree {
+	return g.trees[index]
+}
+
+func (g *game) getShadowsAt(index int) []shadow {
+	return g.shadows[index]
+}
+
+func (g *game) getMyTrees() (trees map[int]tree) {
+	for _, t := range g.trees {
+		if t.isMine {
+			trees[t.index] = t
+		}
+	}
+	return
+}
+
+func (g *game) getGrowCost(currentSize int) int {
+	return g.costs[currentSize+1]
+}
+
+func (g *game) getSeedCost() int {
+	return g.costs[0]
+}
+
+func (g *game) getDefaultAction() action {
+	return action{action: wait, debugMessage: "Default Action"}
+}
+
+func (g *game) getNumberOfSeeds() (seeds int) {
+	for _, t := range g.trees {
+		if t.isMine && t.isSeed {
+			seeds++
+		}
+	}
+	return
+}
+
+func (g *game) getNumberOfTrees() (number int) {
+	for _, t := range g.trees {
+		if t.isMine {
+			number++
+		}
+	}
+	return
+}
+
+func (g *game) getShadows(t tree) (shadows []shadow) {
+	if t.isSeed {
+		return shadows
+	}
+	for d, index := range g.getCellAt(t.index).neighbours {
+		s := shadow{index: index, originIndex: t.index, direction: d, size: t.size}
+		shadows = append(shadows, s)
+		for i := 0; i < t.size; i++ {
+			si := g.getCellAt(index).neighbours[d]
+			s := shadow{index: si, originIndex: t.index, direction: d, size: t.size}
+			shadows = append(shadows, s)
+		}
+	}
+	return
+}
+
+/*
+	----- issers
+*/
+
+func (g *game) isShadowed(index int) bool {
+	return len(g.shadows[index]) > 0
+}
+
+/*
+	----- updaters
+*/
+
+func (g *game) updateShadows() {
+	for _, t := range g.trees {
+		if t.isSeed {
+			continue
+		}
+		for _, sh := range g.getShadows(t) {
+			g.shadows[sh.index] = append(g.shadows[sh.index], sh)
+		}
+	}
+}
+
+/*
+	updates the cost map with the costs for growing a tree from size X to Y
+	Growing a seed into a size 1 tree costs 1 sun point + the number of size 1 trees you already own.
+	Growing a size 1 tree into a size 2 tree costs 3 sun points + the number of size 2 trees you already own.
+	Growing a size 2 tree into a size 3 tree costs 7 sun points + the number of size 3 trees you already own.
+*/
+func (g *game) updateGrowCosts() {
+	costs := map[int]int{0: 0, 1: 1, 2: 3, 3: 7}
+	for _, t := range g.trees {
+		costs[t.size]++
+	}
+	g.costs = costs
+}
+
+func (g *game) nextAction() action {
+	g.printPossActions()
+	return g.getDefaultAction()
 }
 
 func main() {
@@ -287,7 +312,7 @@ func main() {
 			richness:   richness,
 			neighbours: []int{neigh0, neigh1, neigh2, neigh3, neigh4, neigh5},
 		}
-		g.board = append(g.board, newCell)
+		g.cells[newCell.index] = newCell
 	}
 	for {
 		g.clear()
@@ -347,8 +372,9 @@ func main() {
 				size:      size,
 				isMine:    isMine,
 				isDormant: isDormant,
+				isSeed:    size == 0,
 			}
-			g.trees = append(g.trees, newTree)
+			g.trees[newTree.index] = newTree
 		}
 		// numberOfPossibleActions: all legal actions
 		var numberOfPossibleActions int
@@ -358,10 +384,10 @@ func main() {
 		for i := 0; i < numberOfPossibleActions; i++ {
 			scanner.Scan()
 			possibleAction := scanner.Text()
-			g.possActions = append(g.possActions, parseActionString(possibleAction))
+			a := parseActionString(possibleAction)
+			g.possActions[a.action] = append(g.possActions[a.action], a)
 		}
 
-		// fmt.Fprintln(os.Stderr, "Debug messages...")
 		if na := g.nextAction(); na.debugMessage == "" {
 			fmt.Println(na.String() + " " + na.debugMessage)
 		} else {
