@@ -235,11 +235,11 @@ func (g *game) getNumberOfTrees() (number int) {
 
 func (g *game) getNumberOfTreesSize(size int) (number int) {
 	for _, t := range g.trees {
-		if t.isMine && t.size == size{
-            number++
-        }
-    }
-    return
+		if t.isMine && t.size == size {
+			number++
+		}
+	}
+	return
 }
 
 func (g *game) getShadows(t tree) (shadows []shadow) {
@@ -247,18 +247,18 @@ func (g *game) getShadows(t tree) (shadows []shadow) {
 		return shadows
 	}
 	for d, index := range g.getCellAt(t.index).neighbours {
-        if index == -1 {
-            continue
-        }
+		if index == -1 {
+			continue
+		}
 		s := shadow{index: index, originIndex: t.index, direction: d, size: t.size}
 		shadows = append(shadows, s)
 
-        n := g.getCellAt(index)
+		n := g.getCellAt(index)
 		for i := 1; i < t.size; i++ {
 			si := n.neighbours[d]
-            if si == -1 {
-                continue
-            }
+			if si == -1 {
+				continue
+			}
 			s := shadow{index: si, originIndex: t.index, direction: d, size: t.size}
 			shadows = append(shadows, s)
 		}
@@ -275,28 +275,28 @@ func (g *game) isShadowed(index int) bool {
 }
 
 func (g *game) isNeighbourToTree(index int) bool {
-    for _, t := range g.trees {
-        if t.isMine {
-            for _, i := range g.getCellAt(t.index).neighbours {
-                if index == i {
-                    return true
-                }
-            }
-        }
-    }
-    return false
+	for _, t := range g.trees {
+		if t.isMine {
+			for _, i := range g.getCellAt(t.index).neighbours {
+				if index == i {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (g *game) canSeed() bool {
-    return len(g.possActions[seed]) > 0
+	return len(g.possActions[seed]) > 0
 }
 
 func (g *game) canGrow() bool {
-    return len(g.possActions[grow]) > 0
+	return len(g.possActions[grow]) > 0
 }
 
 func (g *game) canComplete() bool {
-    return len(g.possActions[complete]) > 0
+	return len(g.possActions[complete]) > 0
 }
 
 /*
@@ -330,20 +330,20 @@ func (g *game) updateGrowCosts() {
 
 func (g *game) nextAction() action {
 	g.printPossActions()
-    if g.getNumberOfSeeds() < 1 && g.canSeed() {
-        for _, s := range g.possActions[seed] {
-            if !g.isNeighbourToTree(s.targetCellIndex) {
-                return s
-            }
-        }
-        return g.possActions[seed][0]
-    }
-    if g.canGrow() && g.getNumberOfTreesSize(3) < 3 {
-        return g.possActions[grow][0]
-    }
-    if g.canComplete() && g.getNumberOfTrees() > 1 {
-        return g.possActions[complete][0]
-    }
+	if g.getNumberOfSeeds() < 1 && g.canSeed() {
+		for _, s := range g.possActions[seed] {
+			if !g.isNeighbourToTree(s.targetCellIndex) {
+				return s
+			}
+		}
+		return g.possActions[seed][0]
+	}
+	if g.canGrow() && g.getNumberOfTreesSize(3) < 3 {
+		return g.possActions[grow][0]
+	}
+	if g.canComplete() && g.getNumberOfTrees() > 1 {
+		return g.possActions[complete][0]
+	}
 	return g.getDefaultAction()
 }
 
@@ -357,7 +357,7 @@ func main() {
 	fmt.Sscan(scanner.Text(), &numberOfCells)
 
 	var g game
-    g.cells = map[int]cell{}
+	g.cells = map[int]cell{}
 
 	for i := 0; i < numberOfCells; i++ {
 		// index: 0 is the center cell, the next cells spiral outwards
@@ -447,10 +447,10 @@ func main() {
 			g.possActions[a.action] = append(g.possActions[a.action], a)
 		}
 
-        g.updateGrowCosts()
-        g.updateShadows()
+		g.updateGrowCosts()
+		g.updateShadows()
 
-        g.printShadows()
+		g.printShadows()
 
 		if na := g.nextAction(); na.debugMessage == "" {
 			fmt.Println(na.String() + " " + na.debugMessage)
