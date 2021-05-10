@@ -1,3 +1,48 @@
+/*
+	Plan:
+
+	When to grow a tree?
+		- when
+			- we have too many of X size trees
+			- we have too many trees
+			- it increases the amount of sun we have
+
+	When to plant a seed?
+		- when
+			- we only have 1 tree
+			- we can plant in the center
+			- we can shadow oppent tree(s)
+			- it increases the amount of sun we have
+
+	When to complete a tree?
+		- when
+			- we are close to finishing
+			- it does not give any sun && not blocks opponents trees
+			- opponent score is way higher(?)
+			- it increases the amount of sun we have
+
+	When to wait?
+		- when
+			- we can't take an action
+			- we can't afford desired action (?)
+
+	Where to plant a seed?
+		- where
+			- in the center
+			- close to the center
+			- edges for sun generators?
+
+
+	Take the action that makes you the most sun gain each round
+
+	--------------- TRASH BELOW
+
+	Order of importance?
+		- Grow if you can
+		- Complete if you can
+		- Plant if you can
+*/
+
 package main
 
 import (
@@ -16,6 +61,28 @@ type cell struct {
 type tree struct {
 	index, size       int
 	isMine, isDormant bool
+}
+
+func (g *game) getCellAt(index int) (bool, cell) {
+	for _, c := range g.board {
+		if c.index == index {
+			return true, c
+		}
+	}
+	return false, cell{}
+}
+
+func (g *game) getTreeAt(index int) (bool, tree) {
+	for _, t := range g.trees {
+		if t.index == index {
+			return true, t
+		}
+	}
+	return false, tree{}
+}
+
+func (t tree) isSeed() bool {
+	return t.size == 0
 }
 
 type actionType int
@@ -78,38 +145,122 @@ type game struct {
 	possActions                                      []action
 }
 
-func (g *game) removeActionAt(i int) {
-	g.possActions[i] = g.possActions[len(g.possActions)-1]
-	g.possActions[len(g.possActions)-1] = action{}
-	g.possActions = g.possActions[:len(g.possActions)-1]
-}
-
 func (g *game) clear() {
 	g.trees = nil
 	g.possActions = nil
 }
 
-func (g *game) nextAction() action {
-	g.printPossActions()
+func (g *game) sunCost() map[int]int {
+	costs := map[int]int{}
+	for _, t := range g.trees {
+		costs[t.size] += 1
+	}
+	return costs
+}
+
+func (g *game) getComplete() (bool, action) {
 	for _, pa := range g.possActions {
-		if pa.action == complete && len(g.trees) > 1 {
-			fmt.Fprintln(os.Stderr, fmt.Sprintf("Comp: %v", pa))
-			return pa
-		} else if pa.action == grow && len(g.trees) > 3 {
-			fmt.Fprintln(os.Stderr, fmt.Sprintf("Grow: %v", pa))
-			return pa
-		} else if pa.action == seed {
-			fmt.Fprintln(os.Stderr, fmt.Sprintf("Seed: %v", pa))
-			return pa
+		if pa.action == complete {
+			return true, pa
 		}
 	}
-	g.possActions[0].debugMessage = "Took first Action"
-	return g.possActions[0]
+	return false, action{}
+}
+
+func (g *game) getGrow() (bool, action) {
+	grows := []action{}
+	for _, pa := range g.possActions {
+		if pa.action == grow {
+			grows = append(grows, pa)
+		}
+	}
+
+	// grow the most expensive one
+	costs := g.sunCost()
+	k := 0
+	v := 0
+	for kk, vv := range costs {
+		if vv > v {
+			k = kk
+			v = vv
+		}
+	}
+	for _, pa := range grows {
+		if ok, t := g.getTreeAt(pa.targetCellIndex); ok && t.size == k {
+			return true, pa
+		}
+	}
+
+	return false, action{}
+}
+
+func (g *game) getSeed() (bool, action) {
+	seeds := []action{}
+	for _, pa := range g.possActions {
+		if pa.action == seed {
+			seeds = append(seeds, pa)
+		}
+	}
+
+	// find out which seed has the most potential with nutrients
+	pa := action{}
+	bestNutrients := -1
+	for _, s := range seeds {
+		_, c := g.getCellAt(s.targetCellIndex)
+		if c.richness > bestNutrients {
+			bestNutrients = c.richness
+			pa = s
+		}
+	}
+	if bestNutrients != -1 {
+		return true, pa
+	}
+
+	return false, action{}
+}
+
+func (g *game) defaultAction() action {
+	return action{action: wait, debugMessage: "Default Action"}
+}
+
+func (g *game) numberOfSeeds() (seeds int) {
+	for _, t := range g.trees {
+		if t.isSeed() {
+			seeds++
+		}
+	}
+	return
+}
+
+func (g *game) myTrees() (trees []tree) {
+	for _, t := range g.trees {
+		if t.isMine {
+			trees = append(trees, t)
+		}
+	}
+	return
+}
+
+func (g *game) nextAction() action {
+	g.printPossActions()
+	ok, pa := g.getGrow()
+	if ok && g.day < 20 {
+		return pa
+	}
+	ok, complete := g.getComplete()
+	if ok && len(g.myTrees()) > 3 || ok && g.day > 19 {
+		return complete
+	}
+	ok, seed := g.getSeed()
+	if ok && g.numberOfSeeds() < 1 {
+		return seed
+	}
+	return g.defaultAction()
 }
 
 func (g *game) printPossActions() {
 	for _, pa := range g.possActions {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("%v", pa))
+		fmt.Fprintf(os.Stderr, fmt.Sprintf("%v\n", pa))
 	}
 }
 
