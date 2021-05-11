@@ -49,6 +49,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -391,10 +392,58 @@ func filter(actions []action, test func(action) bool) (ret []action) {
 	return
 }
 
+type shadowPair struct {
+	a               action
+	mine, opp, size int
+}
+
+type BySP []shadowPair
+
+func (a BySP) Len() int { return len(a) }
+func (a BySP) Less(i, j int) bool {
+	if a[i].mine == a[j].mine {
+		return a[i].opp > a[j].opp
+	} else {
+		return a[i].mine < a[j].mine
+	}
+}
+func (a BySP) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+type BySP2 []shadowPair
+
+func (a BySP2) Len() int { return len(a) }
+func (a BySP2) Less(i, j int) bool {
+	if a[i].mine == a[j].mine {
+		return a[i].opp < a[j].opp
+	} else {
+		return a[i].mine < a[j].mine
+	}
+}
+func (a BySP2) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+type seedTrio struct {
+	a                         action
+	richness, mine, opp, size int
+}
+
+type ByST []seedTrio
+
+func (a ByST) Len() int { return len(a) }
+func (a ByST) Less(i, j int) bool {
+	if a[i].richness != a[j].richness {
+		return a[i].richness > a[j].richness
+	} else if a[i].mine != a[j].mine {
+		return a[i].mine < a[j].mine
+	} else {
+		return a[i].opp > a[j].opp
+	}
+}
+func (a ByST) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
 func (g *game) nextAction() action {
 	g.printPossActions()
 	if g.canSeed() {
-		// ONLY seed shadow free spaces
+		// seed shadow free spaces firstly
 		free := filter(g.possActions[seed], func(a action) bool { return !g.isShadowed(a.targetCellIndex) })
 		if len(free) > 0 {
 			// choose the richest spot
@@ -409,28 +458,41 @@ func (g *game) nextAction() action {
 			return pa
 		}
 
+		// seed the best possible
+		if g.day > 6 && g.getNumberOfSeeds() < 1 && g.getNumberOfTrees() < 6 {
+			st := []seedTrio{}
+			for _, pa := range g.possActions[seed] {
+				t := tree{index: pa.targetCellIndex, isMine: true, isDormant: true, isSeed: false, size: 1}
+				bSpooked := g.isSpooked(t)
+				bMine, bOpp := g.getTreeShadowNumbers(t)
+				t.size++
+				aSpooked := g.isSpooked(t)
+				aMine, aOpp := g.getTreeShadowNumbers(t)
+				if bSpooked {
+					bMine++
+				}
+				if aSpooked {
+					aMine++
+				}
+				t.size--
+				nst := seedTrio{
+					mine:     aMine - bMine,
+					opp:      bOpp - aOpp,
+					richness: g.getCellAt(pa.targetCellIndex).richness,
+					a:        pa,
+				}
+				st = append(st, nst)
+			}
+			sort.Sort(ByST(st))
+			return st[0].a
+		}
+
 		// if we've harvested too much, rebuild wherever
 		if g.getNumberOfTrees() == 1 {
 			return g.possActions[seed][0]
 		}
 	}
-	if g.canGrow() && g.getNumberOfTreesSize(3) < 3 {
-		for _, pa := range g.possActions[grow] {
-			t := g.getTreeAt(pa.targetCellIndex)
-			bSpooked := g.isSpooked(t)
-			bMine, bOpp := g.getTreeShadowNumbers(t)
-			t.size++
-			aSpooked := g.isSpooked(t)
-			aMine, aOpp := g.getTreeShadowNumbers(t)
-			t.size--
-
-			if (bMine <= aMine && bOpp >= aOpp) || (bSpooked && !aSpooked) {
-				return pa
-			}
-		}
-		return g.possActions[grow][0]
-	}
-	if (g.canComplete() && g.getNumberOfTrees() > 1) || (g.canComplete() && g.day > 20) {
+	if g.canComplete() && g.day > 20 {
 		for _, pa := range g.possActions[complete] {
 			t := g.getTreeAt(pa.targetCellIndex)
 			mine, opp := g.getTreeShadowNumbers(t)
@@ -438,9 +500,67 @@ func (g *game) nextAction() action {
 				return pa
 			}
 		}
-		if g.day > 20 {
-			return g.possActions[complete][0]
+		return g.possActions[complete][0]
+	}
+	if g.canGrow() {
+		sp := []shadowPair{}
+		for _, pa := range g.possActions[grow] {
+			// grow the one that optimises 1. less shadowed of min, and more of opp
+			t := g.getTreeAt(pa.targetCellIndex)
+			bSpooked := g.isSpooked(t)
+			bMine, bOpp := g.getTreeShadowNumbers(t)
+			t.size++
+			aSpooked := g.isSpooked(t)
+			aMine, aOpp := g.getTreeShadowNumbers(t)
+			if bSpooked {
+				bMine++
+			}
+			if aSpooked {
+				aMine++
+			}
+			t.size--
+			nsp := shadowPair{
+				mine: aMine - bMine,
+				opp:  bOpp - aOpp,
+				a:    pa,
+				size: t.size,
+			}
+			sp = append(sp, nsp)
 		}
+		sort.Sort(BySP(sp))
+		for _, v := range sp {
+			if v.size == 2 {
+				return v.a
+			}
+		}
+		return sp[0].a
+	}
+	if (g.canComplete() && g.getNumberOfTrees() > 1 && g.getNumberOfTreesSize(3) > 2) || (g.canComplete() && g.day > 20) {
+		sp := []shadowPair{}
+		for _, pa := range g.possActions[complete] {
+			// complete the one that optimises 1. less shadowed of mine, and more of opp
+			t := g.getTreeAt(pa.targetCellIndex)
+			bSpooked := g.isSpooked(t)
+			bMine, bOpp := g.getTreeShadowNumbers(t)
+			t.size++
+			aSpooked := g.isSpooked(t)
+			aMine, aOpp := g.getTreeShadowNumbers(t)
+			if bSpooked {
+				bMine++
+			}
+			if aSpooked {
+				aMine++
+			}
+			t.size--
+			nsp := shadowPair{
+				mine: aMine - bMine,
+				opp:  bOpp - aOpp,
+				a:    pa,
+			}
+			sp = append(sp, nsp)
+		}
+		sort.Sort(BySP2(sp))
+		return sp[len(sp)-1].a
 	}
 	return g.getDefaultAction()
 }
