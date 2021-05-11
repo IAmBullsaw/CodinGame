@@ -292,6 +292,18 @@ func (g *game) isShadowed(index int) bool {
 	return len(g.shadows[index]) > 0
 }
 
+func (g *game) isSpooked(t tree) bool {
+	shadows := g.getShadowsAt(t.index)
+	if len(shadows) > 0 {
+		for _, s := range shadows {
+			if s.size >= t.size {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (g *game) isNeighbourToTree(index int) bool {
 	for _, t := range g.trees {
 		if t.isMine {
@@ -370,22 +382,53 @@ func (g *game) updateGrowCosts() {
 	g.costs = costs
 }
 
+func filter(actions []action, test func(action) bool) (ret []action) {
+	for _, e := range actions {
+		if test(e) {
+			ret = append(ret, e)
+		}
+	}
+	return
+}
+
 func (g *game) nextAction() action {
 	g.printPossActions()
-	if g.getNumberOfSeeds() < 1 && g.canSeed() {
-		for _, s := range g.possActions[seed] {
-			// ONLY seed shadow free spaces
-			if !g.isShadowed(s.targetCellIndex) {
-				return s
+	if g.canSeed() {
+		// ONLY seed shadow free spaces
+		free := filter(g.possActions[seed], func(a action) bool { return !g.isShadowed(a.targetCellIndex) })
+		if len(free) > 0 {
+			// choose the richest spot
+			pa := action{}
+			richness := 0
+			for _, s := range free {
+				if c := g.getCellAt(s.targetCellIndex); richness < c.richness {
+					richness = c.richness
+					pa = s
+				}
 			}
-			if g.isShadowed(s.targetCellIndex) && g.hasShadowFreeNeighbour(s.targetCellIndex) {
-				continue
-			}
+			return pa
 		}
+
 		// if we've harvested too much, rebuild wherever
 		if g.getNumberOfTrees() == 1 {
 			return g.possActions[seed][0]
 		}
+	}
+	if g.canGrow() && g.getNumberOfTreesSize(3) < 3 {
+		for _, pa := range g.possActions[grow] {
+			t := g.getTreeAt(pa.targetCellIndex)
+			bSpooked := g.isSpooked(t)
+			bMine, bOpp := g.getTreeShadowNumbers(t)
+			t.size++
+			aSpooked := g.isSpooked(t)
+			aMine, aOpp := g.getTreeShadowNumbers(t)
+			t.size--
+
+			if (bMine <= aMine && bOpp >= aOpp) || (bSpooked && !aSpooked) {
+				return pa
+			}
+		}
+		return g.possActions[grow][0]
 	}
 	if (g.canComplete() && g.getNumberOfTrees() > 1) || (g.canComplete() && g.day > 20) {
 		for _, pa := range g.possActions[complete] {
@@ -398,22 +441,6 @@ func (g *game) nextAction() action {
 		if g.day > 20 {
 			return g.possActions[complete][0]
 		}
-	}
-	if g.canGrow() && g.getNumberOfTreesSize(3) < 3 {
-		for _, pa := range g.possActions[grow] {
-			t := g.getTreeAt(pa.targetCellIndex)
-			bMine, bOpp := g.getTreeShadowNumbers(t)
-			t.size++
-			aMine, aOpp := g.getTreeShadowNumbers(t)
-			t.size--
-
-			if bMine <= aMine && bOpp >= aOpp {
-				return pa
-			}
-
-		}
-
-		return g.possActions[grow][0]
 	}
 	return g.getDefaultAction()
 }
