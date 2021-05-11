@@ -194,13 +194,14 @@ func (g *game) getShadowsAt(index int) []shadow {
 	return g.shadows[index]
 }
 
-func (g *game) getMyTrees() (trees map[int]tree) {
+func (g *game) getMyTrees() map[int]tree {
+	trees := map[int]tree{}
 	for _, t := range g.trees {
 		if t.isMine {
 			trees[t.index] = t
 		}
 	}
-	return
+	return trees
 }
 
 func (g *game) getGrowCost(currentSize int) int {
@@ -266,6 +267,23 @@ func (g *game) getShadows(t tree) (shadows []shadow) {
 	return
 }
 
+func (g *game) getTreeShadowNumbers(origin tree) (mine, opp int) {
+	shadows := g.getShadows(origin)
+	for _, t := range g.trees {
+		for _, sh := range shadows {
+			if sh.index == t.index {
+				if t.isMine {
+					mine++
+				} else {
+					opp++
+				}
+			}
+		}
+	}
+
+	return
+}
+
 /*
 	----- issers, hassers and canners
 */
@@ -279,6 +297,30 @@ func (g *game) isNeighbourToTree(index int) bool {
 		if t.isMine {
 			for _, i := range g.getCellAt(t.index).neighbours {
 				if index == i {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (g *game) hasShadowFreeNeighbour(index int) bool {
+	c := g.getCellAt(index)
+	for _, n := range c.neighbours {
+		if _, ok := g.shadows[n]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *game) isShadowingOpponent(origin tree) bool {
+	shadows := g.getShadows(origin)
+	for _, t := range g.trees {
+		for _, sh := range shadows {
+			if sh.index == t.index {
+				if !t.isMine && origin.size >= t.size {
 					return true
 				}
 			}
@@ -332,17 +374,46 @@ func (g *game) nextAction() action {
 	g.printPossActions()
 	if g.getNumberOfSeeds() < 1 && g.canSeed() {
 		for _, s := range g.possActions[seed] {
-			if !g.isNeighbourToTree(s.targetCellIndex) {
+			// ONLY seed shadow free spaces
+			if !g.isShadowed(s.targetCellIndex) {
 				return s
 			}
+			if g.isShadowed(s.targetCellIndex) && g.hasShadowFreeNeighbour(s.targetCellIndex) {
+				continue
+			}
 		}
-		return g.possActions[seed][0]
+		// if we've harvested too much, rebuild wherever
+		if g.getNumberOfTrees() == 1 {
+			return g.possActions[seed][0]
+		}
+	}
+	if (g.canComplete() && g.getNumberOfTrees() > 1) || (g.canComplete() && g.day > 20) {
+		for _, pa := range g.possActions[complete] {
+			t := g.getTreeAt(pa.targetCellIndex)
+			mine, opp := g.getTreeShadowNumbers(t)
+			if mine > opp || opp < 3 {
+				return pa
+			}
+		}
+		if g.day > 20 {
+			return g.possActions[complete][0]
+		}
 	}
 	if g.canGrow() && g.getNumberOfTreesSize(3) < 3 {
+		for _, pa := range g.possActions[grow] {
+			t := g.getTreeAt(pa.targetCellIndex)
+			bMine, bOpp := g.getTreeShadowNumbers(t)
+			t.size++
+			aMine, aOpp := g.getTreeShadowNumbers(t)
+			t.size--
+
+			if bMine <= aMine && bOpp >= aOpp {
+				return pa
+			}
+
+		}
+
 		return g.possActions[grow][0]
-	}
-	if g.canComplete() && g.getNumberOfTrees() > 1 {
-		return g.possActions[complete][0]
 	}
 	return g.getDefaultAction()
 }
